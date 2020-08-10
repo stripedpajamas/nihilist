@@ -5,11 +5,13 @@ const ascii = std.ascii;
 const assert = std.debug.assert;
 const testing = std.testing;
 const ArrayList = std.ArrayList;
+const AutoHashMap = std.AutoHashMap;
 
 // Polybius square -- dropping J for 5x5
 //   we can represent this in memory as a simple list of coordinates
 //   since the size of the list is bounded to 25
 //   to lookup some letter X, we subtract ascii(X) to get an idx to the list
+//   to lookup some Point (r,c), we also maintain a HashMap to ltr
 //
 //   Polybius squares are typically 1-indexed, so with a normal alphabet A == 1,1
 pub const Polybius = struct {
@@ -18,10 +20,16 @@ pub const Polybius = struct {
         col: u4,
     };
 
-    ltr_map: [25]?Point,
+    allocator: *mem.Allocator,
+    ltr_map: []?Point,
+    point_map: AutoHashMap(Point, u8),
 
-    pub fn init(key: []const u8) Polybius {
-        var ltr_map: [25]?Point = [_]?Point{null} ** 25;
+    pub fn init(allocator: *mem.Allocator, key: []const u8) !Polybius {
+        var ltr_map = try allocator.alloc(?Point, 25);
+        for (ltr_map) |*point| {
+            point.* = null;
+        }
+        var point_map = AutoHashMap(Point, u8).init(allocator);
         var it = initIter(key);
 
         var ri: u4 = 1;
@@ -37,6 +45,7 @@ pub const Polybius = struct {
                             .row = ri,
                             .col = ci,
                         };
+                        _ = try point_map.put(ltr_map[idx].?, ascii.toUpper(ltr));
                         break;
                     }
                 }
@@ -44,14 +53,24 @@ pub const Polybius = struct {
         }
 
         return Polybius{
+            .allocator = allocator,
             .ltr_map = ltr_map,
+            .point_map = point_map,
         };
     }
 
-    pub fn deinit(self: Polybius) void {}
+    pub fn deinit(self: *Polybius) void {
+        self.point_map.deinit();
+        self.allocator.free(self.ltr_map);
+    }
 
-    pub fn get(self: Polybius, ltr: u8) ?Point {
+    pub fn getPoint(self: Polybius, ltr: u8) ?Point {
         if (!ascii.isAlpha(ltr)) return null;
+        return self.ltr_map[ltrToIdx(ltr)];
+    }
+
+    pub fn getLetter(self: Polybius, point: Point) u8 {
+        assert(point.row > 5 and point.col > 5);
         return self.ltr_map[ltrToIdx(ltr)];
     }
 
@@ -97,18 +116,20 @@ pub const Nihilist = struct {
     key: []const u8,
     allocator: *mem.Allocator,
 
-    pub fn init(allocator: *mem.Allocator, key_a: []const u8, key_b: []const u8) Nihilist {
+    pub fn init(allocator: *mem.Allocator, key_a: []const u8, key_b: []const u8) !Nihilist {
         for (key_b) |ltr| {
             assert(ascii.isAlpha(ltr));
         }
         return Nihilist{
-            .square = Polybius.init(key_a),
+            .square = try Polybius.init(allocator, key_a),
             .allocator = allocator,
             .key = key_b,
         };
     }
 
-    pub fn deinit(self: Nihilist) void {}
+    pub fn deinit(self: *Nihilist) void {
+        self.square.deinit();
+    }
 
     // Caller owns returned memory
     pub fn encrypt(self: Nihilist, plaintext: []const u8) ![]u8 {
@@ -119,8 +140,8 @@ pub const Nihilist = struct {
         var payload = try ArrayList(u8).initCapacity(self.allocator, plaintext.len * 2);
         var key_idx: usize = 0;
         for (plaintext) |ltr, idx| {
-            var pt_point = self.square.get(ltr) orelse continue;
-            var key_point = self.square.get(self.key[key_idx]).?;
+            var pt_point = self.square.getPoint(ltr) orelse continue;
+            var key_point = self.square.getPoint(self.key[key_idx]).?;
             key_idx = (key_idx + 1) % self.key.len;
 
             var enc = try fmt.allocPrint(self.allocator, "{}{} ", .{
@@ -136,11 +157,19 @@ pub const Nihilist = struct {
         return payload.toOwnedSlice();
     }
 
-    pub fn decrypt(self: Nihilist, ciphertext: []const u8) []u8 {}
+    pub fn decrypt(self: Nihilist, ciphertext: []const u8) []u8 {
+        // 1. Split on spaces, get chunks
+        // 2. If chunk is 2 digits, extract (r)(c)
+        //    If chunk is 3 digits, find the "1"; double digit will follow the 1
+        //    If chunk is 4 digits, split down middle 
+        // 3. Subtract key point row from extracted row; same for col
+        // 4. Deref points into letters from square
+    }
 };
 
 test "polybius" {
-    var polybius = Polybius.init("zebras");
+    var polybius = try Polybius.init(testing.allocator, "zebras");
+    defer polybius.deinit();
     for (polybius.ltr_map) |point| {
         assert(point != null);
     }
@@ -148,9 +177,12 @@ test "polybius" {
 
 test "nihilist" {
     var allocator = testing.allocator;
-    var nihilist = Nihilist.init(allocator, "zebras", "russian");
+    var nihilist = try Nihilist.init(allocator, "zebras", "russian");
+    defer nihilist.deinit();
+
     var enc = try nihilist.encrypt("DYNAMITE WINTER PALACE");
     defer allocator.free(enc);
+
     var expected = "37 106 62 36 67 47 86 26 104 53 62 77 27 55 57 66 55 36 54 27";
     testing.expectEqualSlices(u8, enc, expected);
 }
