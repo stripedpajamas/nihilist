@@ -1,2 +1,6 @@
 *.swp
 zig-cache
+nihilist
+nihilist.o
+main
+main.o
