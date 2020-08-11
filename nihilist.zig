@@ -157,13 +157,15 @@ pub const Nihilist = struct {
         return payload.toOwnedSlice();
     }
 
-    pub fn decrypt(self: Nihilist, ciphertext: []const u8) []u8 {
+    pub fn decrypt(self: Nihilist, ciphertext: []const u8) ![]u8 {
         // 1. Split on spaces, get chunks
         // 2. If chunk is 2 digits, extract (r)(c)
         //    If chunk is 3 digits, find the "1"; double digit will follow the 1
         //    If chunk is 4 digits, split down middle 
         // 3. Subtract key point row from extracted row; same for col
         // 4. Deref points into letters from square
+
+        return "";
     }
 };
 
@@ -185,4 +187,11 @@ test "nihilist" {
 
     var expected = "37 106 62 36 67 47 86 26 104 53 62 77 27 55 57 66 55 36 54 27";
     testing.expectEqualSlices(u8, enc, expected);
+
+    var dec = try nihilist.decrypt(enc);
+    defer allocator.free(dec);
+
+    var expected_dec = "DYNAMITE WINTER PALACE";
+    testing.expectEqualSlices(u8, dec, expected_dec);
+
 }
