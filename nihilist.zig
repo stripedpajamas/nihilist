@@ -69,9 +69,9 @@ pub const Polybius = struct {
         return self.ltr_map[ltrToIdx(ltr)];
     }
 
-    pub fn getLetter(self: Polybius, point: Point) u8 {
-        assert(point.row > 5 and point.col > 5);
-        return self.ltr_map[ltrToIdx(ltr)];
+    pub fn getLetter(self: Polybius, point: Point) ?u8 {
+        assert(point.row <= 5 and point.col <= 5);
+        return self.point_map.get(point);
     }
 
     fn ltrToIdx(letter: u8) usize {
@@ -159,13 +159,72 @@ pub const Nihilist = struct {
 
     pub fn decrypt(self: Nihilist, ciphertext: []const u8) ![]u8 {
         // 1. Split on spaces, get chunks
-        // 2. If chunk is 2 digits, extract (r)(c)
-        //    If chunk is 3 digits, find the "1"; double digit will follow the 1
-        //    If chunk is 4 digits, split down middle 
+        // 2. Get point from chunk
         // 3. Subtract key point row from extracted row; same for col
         // 4. Deref points into letters from square
+        var plaintext = try ArrayList(u8).initCapacity(self.allocator, ciphertext.len / 2);
 
-        return "";
+        var chunk_it = mem.split(ciphertext, " ");
+        var key_idx: usize = 0;
+        var decoded_count: usize = 0;
+        while (chunk_it.next()) |chunk| {
+            var ct_point = try self.pointFromCiphertextChunk(chunk);
+            var key_point = self.square.getPoint(self.key[key_idx]).?;
+            key_idx = (key_idx + 1) % self.key.len;
+
+            if (ct_point.row <= key_point.row or ct_point.col <= key_point.col) {
+                return error.InvalidKey;
+            }
+            var pt_point = Polybius.Point{
+                .row = ct_point.row - key_point.row,
+                .col = ct_point.col - key_point.col,
+            };
+            var ltr = self.square.getLetter(pt_point);
+            if (ltr == null) {
+                return error.InvalidKey;
+            }
+
+            try plaintext.append(ltr.?);
+            decoded_count += 1;
+        }
+
+        plaintext.shrink(decoded_count);
+        
+        return plaintext.toOwnedSlice();
+    }
+
+    fn pointFromCiphertextChunk(self: Nihilist, chunk: []const u8) !Polybius.Point {
+        // If chunk is 2 digits, extract (r)(c)
+        // If chunk is 3 digits, find the "1"; double digit will follow the 1
+        // If chunk is 4 digits, split down middle 
+        var row: u4 = undefined;
+        var col: u4 = undefined;
+        switch (chunk.len) {
+            2 => {
+                row = try fmt.parseInt(u4, chunk[0..1], 10);
+                col = try fmt.parseInt(u4, chunk[1..], 10);
+            },
+            3 => {
+                if (chunk[0] == '1') {
+                    row = try fmt.parseInt(u4, chunk[0..2], 10);
+                    col = try fmt.parseInt(u4, chunk[2..], 10);
+                } else {
+                    row = try fmt.parseInt(u4, chunk[0..1], 10);
+                    col = try fmt.parseInt(u4, chunk[1..], 10);
+                }
+            },
+            4 => {
+                row = try fmt.parseInt(u4, chunk[0..2], 10);
+                col = try fmt.parseInt(u4, chunk[2..], 10);
+            },
+            else => {
+                return error.InvalidCiphertext;
+            }
+        }
+        return Polybius.Point{
+            .row = row,
+            .col = col,
+        };
     }
 };
 
@@ -191,7 +250,6 @@ test "nihilist" {
     var dec = try nihilist.decrypt(enc);
     defer allocator.free(dec);
 
-    var expected_dec = "DYNAMITE WINTER PALACE";
+    var expected_dec = "DYNAMITEWINTERPALACE";
     testing.expectEqualSlices(u8, dec, expected_dec);
-
 }
