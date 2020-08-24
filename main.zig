@@ -25,6 +25,20 @@ pub fn main() !void {
 
     var nihilist = try Nihilist.init(allocator, args[2], args[3]);
 
-    var output = if (dec) try nihilist.decrypt(args[4]) else try nihilist.encrypt(args[4]);
-    std.debug.warn("{}\n", .{output});
+    var output = if (dec) nihilist.decrypt(args[4]) else nihilist.encrypt(args[4]);
+    if (output) |out| {
+        std.debug.warn("{}\n", .{out});
+    } else |err| {
+        switch (err) {
+            error.InvalidKey => {
+                std.debug.warn("Invalid key!\n", .{});
+            },
+            error.InvalidCiphertext => {
+                std.debug.warn("Invalid ciphertext!\n", .{});
+            },
+            else => {
+                std.debug.warn("Error: {}\n", .{err});
+            }
+        }
+    }
 }
