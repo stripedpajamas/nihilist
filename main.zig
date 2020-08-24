@@ -11,15 +11,15 @@ pub fn main() !void {
     defer std.process.argsFree(allocator, args);
 
     if (args.len < 4) {
-        std.debug.warn("Usage: nihilist <encrypt|decrypt> <polybius_key> <nihilist_key> <plaintext>\n", .{});
+        std.debug.warn("Usage: nihilist <encrypt|decrypt> <polybius_key> <nihilist_key> <plaintext|ciphertext>\n", .{});
         return;
     }
 
     var enc = std.mem.eql(u8, args[1], "encrypt");
-    var dec = std.mem.eql(u8, args[2], "decrypt");
+    var dec = std.mem.eql(u8, args[1], "decrypt");
 
     if (!(enc or dec)) {
-        std.debug.warn("Usage: nihilist <encrypt|decrypt> <polybius_key> <nihilist_key> <plaintext>\n", .{});
+        std.debug.warn("Usage: nihilist <encrypt|decrypt> <polybius_key> <nihilist_key> <plaintext|ciphertext>\n", .{});
         return;
     }
 
